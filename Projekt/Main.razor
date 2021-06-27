@@ -1,0 +1,24 @@
+﻿@inject CounterState CounterState
+
+<ContentView>
+    <StackLayout>
+
+        <BlazorWebView VerticalOptions="LayoutOptions.FillAndExpand">
+            <Projekt.WebUI.App />
+        </BlazorWebView>
+
+    </StackLayout>
+</ContentView>
+
+
+@code {
+    protected override void OnInitialized()
+    {
+        CounterState.StateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        CounterState.StateChanged -= StateHasChanged;
+    }
+}
