@@ -44,6 +44,17 @@
     }
 </style>
 
+<SAPAlertBox @ref="Alert1"
+             AlertBoxSize="SAPAlertBoxSize.Small"
+             FooterText="Tic Tac Toe"
+             SAPAlertType="@SAPAlertType.Info"
+             AnimationType="@AnimateBook.ZoomEntrances.ZoomIn.Fast()"
+             Title="Game Over">
+    <p>
+        @Text
+    </p>
+</SAPAlertBox>
+
 <div class="row">
     @if (_gamesettings.PlayerXTurn)
     {
@@ -55,12 +66,21 @@
 <div class="row win-message">
     @if (_gamesettings.OWon)
     {
+        Text = "Player O has won the game!";
+        this.Alert1.ShowAlert();
+
 <div class="alert alert-custom" role="alert"><strong>Game Over:</strong> Player O has won the game!</div>}
     @if (_gamesettings.XWon)
     {
+        Text = "Player X has won the game!";
+        this.Alert1.ShowAlert();
+
 <div class="alert alert-custom" role="alert"><strong>Game Over:</strong> Player X has won the game!</div>}
     @if (_gamesettings.CatGame)
     {
+        Text = "Cat game! Everyone wins!";
+        this.Alert1.ShowAlert();
+
 <div class="alert alert-custom" role="alert"><strong>Game Over:</strong> Cat game! Everyone wins!</div>}
 </div>
 <div class="game-board">
@@ -89,94 +109,98 @@
 </div>
 
 
-@code { private HubConnection _hubConnection;
-            private GameModel _gamesettings;
+@code { public string Text;
 
-            protected List<string> messages = new List<string>();
+    public SAPAlertBox Alert1;
 
-            protected override async Task OnInitializedAsync()
+    private HubConnection _hubConnection;
+    private GameModel _gamesettings;
+
+    protected List<string> messages = new List<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _gamesettings = await GameModelService.GetHumanGameBoardAsync();
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri(@"http://192.168.1.87:45455/gameHub"))
+            .Build();
+
+        _hubConnection.On<GameModel>(ClientEndpoints.ReceiveMessage, (gamesettings) =>
+        {
+            _gamesettings = gamesettings;
+            StateHasChanged();
+        });
+
+        _hubConnection.On<GameModel>(ClientEndpoints.EndTurn, async (gamesettings) =>
+        {
+            if (gamesettings.Botturn)
             {
-                _gamesettings = await GameModelService.GetHumanGameBoardAsync();
-                _hubConnection = new HubConnectionBuilder()
-                    .WithUrl(NavigationManager.ToAbsoluteUri(@"http://192.168.1.87:45455/gameHub"))
-                    .Build();
+                await this.Write($"Turn {gamesettings.TurnCount} - Human Turn Over");
+            }
+            else
+            {
+                await this.Write($"Turn {gamesettings.TurnCount} - Bot Turn Over.");
 
-                _hubConnection.On<GameModel>(ClientEndpoints.ReceiveMessage, (gamesettings) =>
-                {
-                    _gamesettings = gamesettings;
-                    StateHasChanged();
-                });
-
-                _hubConnection.On<GameModel>(ClientEndpoints.EndTurn, async (gamesettings) =>
-                {
-                    if (gamesettings.Botturn)
-                    {
-                        await this.Write($"Turn {gamesettings.TurnCount} - Human Turn Over");
-                    }
-                    else
-                    {
-                        await this.Write($"Turn {gamesettings.TurnCount} - Bot Turn Over.");
-
-                    }
-
-                    await this.Write(Newtonsoft.Json.JsonConvert.SerializeObject(gamesettings.Game, Newtonsoft.Json.Formatting.None));
-
-                    if (!gamesettings.Gameover)
-                    {
-                        _gamesettings = gamesettings;
-                        StateHasChanged();
-                        if (_gamesettings.Botturn)
-                        {
-
-                            await DoBotTurn();
-                        }
-                    }
-                });
-
-                _hubConnection.On<GameModel>(ClientEndpoints.NewHumanGame, (gamesettings) =>
-                {
-                    _gamesettings = gamesettings;
-                    StateHasChanged();
-                });
-
-                _hubConnection.On<GameModel>(ClientEndpoints.NewBotGame, async (gamesettings) =>
-                {
-                    this.messages.Clear();
-                    await this.Write($"Starting New Bot Game");
-                    _gamesettings = gamesettings;
-                    StateHasChanged();
-                });
-
-                _hubConnection.On<GameModel>(ClientEndpoints.GameOver, async (gamesettings) =>
-                {
-                    await this.Write($"Turn {gamesettings.TurnCount} - Game Over.");
-                    await this.Write(Newtonsoft.Json.JsonConvert.SerializeObject(gamesettings.Game, Newtonsoft.Json.Formatting.None));
-                    _gamesettings = gamesettings;
-                    StateHasChanged();
-                });
-
-
-                await _hubConnection.StartAsync();
             }
 
-            private async Task Write(string message)
+            await this.Write(Newtonsoft.Json.JsonConvert.SerializeObject(gamesettings.Game, Newtonsoft.Json.Formatting.None));
+
+            if (!gamesettings.Gameover)
             {
-                this.messages.Add(message);
-                await this.JSRuntime.InvokeVoidAsync("console.log", message);
-            }
-
-            public bool IsConnected => _hubConnection.State == HubConnectionState.Connected;
-            Task Send() => _hubConnection.SendAsync(ServerEndpoints.SendMessage, _gamesettings);
-            Task DoBotTurn() => _hubConnection.SendAsync(ServerEndpoints.TakeBotTurn, _gamesettings);
-            Task NewBotGameClick() => _hubConnection.SendAsync(ServerEndpoints.NewBotGame, _gamesettings);
-            Task NewHumanGameClick() => _hubConnection.SendAsync(ServerEndpoints.NewHumanGame, _gamesettings);
-            Task TakePlayerTurn(int i) => _hubConnection.SendAsync(ServerEndpoints.TakePlayerTurn, i, _gamesettings);
-
-
-            public async Task GameClick(int i)
-            {
-                if (!_gamesettings.Gameover && !_gamesettings.Botturn && string.IsNullOrEmpty(_gamesettings.Game[i]))
+                _gamesettings = gamesettings;
+                StateHasChanged();
+                if (_gamesettings.Botturn)
                 {
-                    await TakePlayerTurn(i);
+
+                    await DoBotTurn();
                 }
-            } }
+            }
+        });
+
+        _hubConnection.On<GameModel>(ClientEndpoints.NewHumanGame, (gamesettings) =>
+        {
+            _gamesettings = gamesettings;
+            StateHasChanged();
+        });
+
+        _hubConnection.On<GameModel>(ClientEndpoints.NewBotGame, async (gamesettings) =>
+        {
+            this.messages.Clear();
+            await this.Write($"Starting New Bot Game");
+            _gamesettings = gamesettings;
+            StateHasChanged();
+        });
+
+        _hubConnection.On<GameModel>(ClientEndpoints.GameOver, async (gamesettings) =>
+        {
+            await this.Write($"Turn {gamesettings.TurnCount} - Game Over.");
+            await this.Write(Newtonsoft.Json.JsonConvert.SerializeObject(gamesettings.Game, Newtonsoft.Json.Formatting.None));
+            _gamesettings = gamesettings;
+            StateHasChanged();
+        });
+
+
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task Write(string message)
+    {
+        this.messages.Add(message);
+        await this.JSRuntime.InvokeVoidAsync("console.log", message);
+    }
+
+    public bool IsConnected => _hubConnection.State == HubConnectionState.Connected;
+    Task Send() => _hubConnection.SendAsync(ServerEndpoints.SendMessage, _gamesettings);
+    Task DoBotTurn() => _hubConnection.SendAsync(ServerEndpoints.TakeBotTurn, _gamesettings);
+    Task NewBotGameClick() => _hubConnection.SendAsync(ServerEndpoints.NewBotGame, _gamesettings);
+    Task NewHumanGameClick() => _hubConnection.SendAsync(ServerEndpoints.NewHumanGame, _gamesettings);
+    Task TakePlayerTurn(int i) => _hubConnection.SendAsync(ServerEndpoints.TakePlayerTurn, i, _gamesettings);
+
+
+    public async Task GameClick(int i)
+    {
+        if (!_gamesettings.Gameover && !_gamesettings.Botturn && string.IsNullOrEmpty(_gamesettings.Game[i]))
+        {
+            await TakePlayerTurn(i);
+        }
+    } }
